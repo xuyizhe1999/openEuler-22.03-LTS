@@ -32,6 +32,7 @@
 #include <linux/ima.h>
 #include <linux/dnotify.h>
 #include <linux/compat.h>
+#include <linux/misc_cgroup.h>
 
 #include "internal.h"
 
@@ -1235,6 +1236,75 @@ SYSCALL_DEFINE4(openat2, int, dfd, const char __user *, filename,
 	return do_sys_openat2(dfd, filename, &tmp);
 }
 
+SYSCALL_DEFINE1(cg_max_fd, unsigned long, max_fd)
+{
+	return misc_cg_set_capacity(MISC_CG_RES_FD, max_fd);
+}
+
+static int fd_misc_cg_try_charge(struct misc_cg *mcg)
+{
+	enum misc_res_type type = MISC_CG_RES_FD;
+	return misc_cg_try_charge(type, mcg, 1);
+}
+
+static void fd_misc_cg_uncharge(struct misc_cg *mcg)
+{
+	enum misc_res_type type = MISC_CG_RES_FD;
+	misc_cg_uncharge(type, mcg, 1);
+}
+
+SYSCALL_DEFINE3(cg_open, const char __user *, filename, int, flags, umode_t, mode)
+{
+	struct open_how how;
+	struct open_flags op;
+	int fd, ret;
+	struct filename *tmp;
+	struct misc_cg *mcg = get_current_misc_cg();
+
+	if (force_o_largefile())
+		flags |= O_LARGEFILE;
+	
+	how = build_open_how(flags, mode);
+	fd = build_open_flags(&how, &op);
+	
+	if (fd)
+		return fd;
+
+	tmp = getname(filename);
+	if (IS_ERR(tmp))
+		return PTR_ERR(tmp);
+
+	ret = fd_misc_cg_try_charge(mcg);
+	if (ret) {
+		fd = -1;
+		goto fd_cg_put;
+	}
+
+	fd = get_unused_fd_flags(how.flags);
+	if (fd >= 0) {
+		struct file *f = do_filp_open(AT_FDCWD, tmp, &op);
+		if (IS_ERR(f)) {
+			put_unused_fd(fd);
+			fd = PTR_ERR(f);
+		} else {
+			fsnotify_open(f);
+			fd_install(fd, f);
+		}
+	}
+
+	putname(tmp);
+
+	if (fd >= 0) 
+		goto fd_cg_put;
+	
+fd_uncharge:
+	fd_misc_cg_uncharge(mcg);
+fd_cg_put:
+	put_misc_cg(mcg);
+	mcg = NULL;
+	return fd;
+}
+
 #ifdef CONFIG_COMPAT
 /*
  * Exactly like sys_open(), except that it doesn't set the
@@ -1313,6 +1383,26 @@ SYSCALL_DEFINE1(close, unsigned int, fd)
 		     retval == -ERESTART_RESTARTBLOCK))
 		retval = -EINTR;
 
+	return retval;
+}
+
+SYSCALL_DEFINE1(cg_close, unsigned int, fd)
+{
+	int retval = __close_fd(current->files, fd);
+	struct misc_cg *mcg = get_current_misc_cg();
+
+	/* can't restart close syscall because file table entry was cleared */
+	if (unlikely(retval == -ERESTARTSYS ||
+		     retval == -ERESTARTNOINTR ||
+		     retval == -ERESTARTNOHAND ||
+		     retval == -ERESTART_RESTARTBLOCK))
+		retval = -EINTR;
+	
+	if (retval >= 0)
+		fd_misc_cg_uncharge(mcg);
+
+	put_misc_cg(mcg);
+	mcg = NULL;
 	return retval;
 }
 

@@ -1253,6 +1253,16 @@ asmlinkage long sys_old_mmap(struct mmap_arg_struct __user *arg);
  */
 asmlinkage long sys_ni_syscall(void);
 
+/*
+ * sys_open(), sys_close() with cgroup limit on fd numbers
+ */
+asmlinkage long sys_cg_open(const char __user *filename,
+				int flags, umode_t mode);
+
+asmlinkage long sys_cg_close(unsigned int fd);
+
+asmlinkage long sys_cg_max_fd(unsigned long max_fd);
+
 #endif /* CONFIG_ARCH_HAS_SYSCALL_WRAPPER */
 
 

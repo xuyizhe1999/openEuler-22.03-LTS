@@ -892,9 +892,14 @@ __SYSCALL(__NR_kabi_reserved454, sys_ni_syscall)
 __SYSCALL(__NR_kabi_reserved455, sys_ni_syscall)
 #define __NR_kabi_reserved456 456
 __SYSCALL(__NR_kabi_reserved456, sys_ni_syscall)
-
+#define __NR_sys_cg_open 457
+__SYSCALL(__NR_sys_cg_open, sys_cg_open)
+#define __NR_sys_cg_close 458
+__SYSCALL(__NR_sys_cg_close, sys_cg_close)
+#define __NR_sys_cg_max_fd 459
+__SYSCALL(__NR_sys_cg_max_fd, sys_cg_max_fd)
 #undef __NR_syscalls
-#define __NR_syscalls 457
+#define __NR_syscalls 460
 
 /*
  * 32 bit systems traditionally used different
